@@ -16,17 +16,15 @@ class ScoreboardActivity : AppCompatActivity() {
         val tvScores = findViewById<TextView>(R.id.tvScores)
         val btnPlay = findViewById<Button>(R.id.btnPlay)
 
-        // İleride Firestore'dan gelecek; şimdilik sabit
         tvTitle.text = "Treasure Hunt Leaderboard"
         tvScores.text = """
-            1. Ayşe - 02:35
-            2. Mehmet - 03:10
-            3. Sen - 04:20
-        """.trimIndent()
+            
+Ayşe - 02:35
+Mehmet - 03:10
+Sen - 04:20""".trimIndent()
 
         btnPlay.setOnClickListener {
-            val intent = Intent(this, TreasureHuntGameActivity::class.java)
-            startActivity(intent)
+            startActivity(Intent(this, TreasureHuntGameActivity::class.java))
         }
     }
 }

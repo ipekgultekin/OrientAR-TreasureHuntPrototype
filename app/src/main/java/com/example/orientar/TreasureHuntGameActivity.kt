@@ -1,11 +1,11 @@
 package com.example.orientar
 
-import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Button
 import android.widget.Chronometer
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 
 class TreasureHuntGameActivity : AppCompatActivity() {
@@ -32,7 +32,6 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         btnOpenAr = findViewById(R.id.btnOpenAr)
         btnSkip = findViewById(R.id.btnSkip)
 
-        // Timer 00:00'dan başlasın
         chronometer.base = SystemClock.elapsedRealtime()
         chronometer.start()
 
@@ -43,10 +42,11 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             showQuestion()
         }
 
+        // ŞİMDİLİK AR AÇMIYORUZ, SADECE TOAST GÖSTER
         btnOpenAr.setOnClickListener {
-            // Şimdilik sadece AR ekranını açıyoruz (MainActivity bizim AR ekranı)
-            val intent = Intent(this, MainActivity::class.java)
-            startActivity(intent)
+            Toast.makeText(this, "AR kısmını ARCore destekli cihazda test edeceğiz.", Toast.LENGTH_SHORT).show()
+            // İleride buraya:
+            // startActivity(Intent(this, MainActivity::class.java))
         }
     }
 

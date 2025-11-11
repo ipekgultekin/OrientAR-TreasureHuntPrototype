@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- İzinler -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature
         android:name="android.hardware.camera"
@@ -19,26 +20,25 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.OrientAR"
-        tools:targetApi="31">
+        tools:targetApi="35">
 
-        <!-- AR kamera ekranı -->
+        <!-- AR kamera ekranı - LAUNCHER DEĞİL -->
         <activity
             android:name=".MainActivity"
-            android:label="AR Hunt"
-            android:theme="@style/Theme.OrientAR" />
+            android:exported="false"
+            android:label="AR Hunt" />
 
         <!-- Treasure Hunt soru ekranı -->
         <activity
             android:name=".TreasureHuntGameActivity"
-            android:label="Treasure Hunt Game"
-            android:theme="@style/Theme.OrientAR" />
+            android:exported="false"
+            android:label="Treasure Hunt Game" />
 
-        <!-- Giriş ekranı: Scoreboard -->
+        <!-- GİRİŞ EKRANI: SCOREBOARD (sadece bunda MAIN/LAUNCHER var) -->
         <activity
             android:name=".ScoreboardActivity"
             android:exported="true"
-            android:label="@string/app_name"
-            android:theme="@style/Theme.OrientAR">
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
