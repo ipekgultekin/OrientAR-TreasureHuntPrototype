@@ -1,34 +1,253 @@
 package com.example.orientar
 
-import android.Manifest
-import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import io.github.sceneview.ar.ARSceneView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
-class MainActivity : AppCompatActivity() {
-
-    private lateinit var arSceneView: ARSceneView
-
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        setContent {
+            MaterialTheme {
+                OrientationScreen()
+            }
+        }
+    }
+}
 
-        arSceneView = findViewById(R.id.arSceneView)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun OrientationScreen() {
+    val metuRed = Color(0xFF8B0000)
+    val context = LocalContext.current
 
-        // Kamera izni kontrolü
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.CAMERA
-            ) != PackageManager.PERMISSION_GRANTED
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(metuRed, shape = RoundedCornerShape(16.dp))
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "METU NCC ORIENTATION",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = metuRed
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.White
+                )
+            )
+        },
+        bottomBar = {
+            BottomNavigationBar()
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(Color.White)
         ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                100
+            // Üst görsel
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.campus_banner),
+                    contentDescription = "METU NCC Campus",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(Color(0xAA8B0000))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Welcome to your new life!",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Let's discover the campus",
+                            color = Color.White,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Menü grid
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    MenuCard(
+                        title = "Campus Tour",
+                        icon = "🔍",
+                        modifier = Modifier.weight(1f)
+                    )
+                    MenuCard(
+                        title = "FAQ",
+                        icon = "💬",
+                        modifier = Modifier.weight(1f)
+                    )
+                    MenuCard(
+                        title = "Treasure Hunt",
+                        icon = "🎁",
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            // 🔴 BURASI: önce ScoreboardActivity açılıyor
+                            val intent = Intent(context, ScoreboardActivity::class.java)
+                            context.startActivity(intent)
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    MenuCard(
+                        title = "Student Societies",
+                        icon = "👥",
+                        modifier = Modifier.weight(1f)
+                    )
+                    MenuCard(
+                        title = "Announcements",
+                        icon = "🔔",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MenuCard(
+    title: String,
+    icon: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
+    Card(
+        modifier = modifier
+            .aspectRatio(1f)
+            .border(2.dp, Color(0xFF8B0000), RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(text = icon, fontSize = 36.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                color = Color.Black
             )
         }
+    }
+}
+
+@Composable
+fun BottomNavigationBar() {
+    NavigationBar(
+        containerColor = Color.White,
+        tonalElevation = 8.dp
+    ) {
+        NavigationBarItem(
+            icon = { Text("🏠", fontSize = 24.sp) },
+            label = { Text("Home", fontSize = 12.sp) },
+            selected = true,
+            onClick = { },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = Color(0xFF8B0000),
+                selectedTextColor = Color(0xFF8B0000),
+                indicatorColor = Color.Transparent
+            )
+        )
+        NavigationBarItem(
+            icon = { Text("📋", fontSize = 24.sp) },
+            label = { Text("My Orientation Unit", fontSize = 12.sp) },
+            selected = false,
+            onClick = { },
+            colors = NavigationBarItemDefaults.colors(
+                unselectedIconColor = Color.Gray,
+                unselectedTextColor = Color.Gray
+            )
+        )
+        NavigationBarItem(
+            icon = { Text("👤", fontSize = 24.sp) },
+            label = { Text("Profile", fontSize = 12.sp) },
+            selected = false,
+            onClick = { },
+            colors = NavigationBarItemDefaults.colors(
+                unselectedIconColor = Color.Gray,
+                unselectedTextColor = Color.Gray
+            )
+        )
     }
 }

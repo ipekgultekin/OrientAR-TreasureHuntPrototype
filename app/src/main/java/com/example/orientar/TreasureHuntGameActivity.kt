@@ -1,56 +1,23 @@
 package com.example.orientar
 
 import android.os.Bundle
-import android.os.SystemClock
 import android.widget.Button
-import android.widget.Chronometer
-import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import io.github.sceneview.ar.ARSceneView
 
 class TreasureHuntGameActivity : AppCompatActivity() {
 
-    private lateinit var chronometer: Chronometer
-    private lateinit var tvQuestion: TextView
-    private lateinit var btnOpenAr: Button
-    private lateinit var btnSkip: Button
-
-    private val questions = listOf(
-        "Everyone looks at me while passing by, but no one remembers me.\nMy arrows speak, I only show the way.",
-        "I carry knowledge but I am not a student.\nYou visit me to study, rest, and sometimes sleep. Who am I?",
-        "You come here hungry and leave happy.\nI serve many, but I never eat. Where am I?"
-    )
-
-    private var currentIndex = 0
+    private lateinit var arSceneView: ARSceneView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_treasure_hunt_game)
+        setContentView(R.layout.activity_main)
 
-        chronometer = findViewById(R.id.chronometerTimer)
-        tvQuestion = findViewById(R.id.tvQuestion)
-        btnOpenAr = findViewById(R.id.btnOpenAr)
-        btnSkip = findViewById(R.id.btnSkip)
+        arSceneView = findViewById(R.id.sceneView)
 
-        chronometer.base = SystemClock.elapsedRealtime()
-        chronometer.start()
-
-        showQuestion()
-
-        btnSkip.setOnClickListener {
-            currentIndex = (currentIndex + 1) % questions.size
-            showQuestion()
+        val backButton: Button = findViewById(R.id.btnBack)
+        backButton.setOnClickListener {
+            finish() // Scoreboard'a geri döner
         }
-
-        // ŞİMDİLİK AR AÇMIYORUZ, SADECE TOAST GÖSTER
-        btnOpenAr.setOnClickListener {
-            Toast.makeText(this, "AR kısmını ARCore destekli cihazda test edeceğiz.", Toast.LENGTH_SHORT).show()
-            // İleride buraya:
-            // startActivity(Intent(this, MainActivity::class.java))
-        }
-    }
-
-    private fun showQuestion() {
-        tvQuestion.text = questions[currentIndex]
     }
 }

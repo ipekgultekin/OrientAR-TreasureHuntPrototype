@@ -2,41 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- İzinler -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature
-        android:name="android.hardware.camera"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.camera.ar"
-        android:required="true" />
 
     <application
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.OrientAR"
-        tools:targetApi="35">
+        tools:targetApi="31">
 
-        <!-- AR kamera ekranı - LAUNCHER DEĞİL -->
+        <!-- 1️⃣ Uygulama açılınca Compose’lu MainActivity açılacak -->
         <activity
             android:name=".MainActivity"
-            android:exported="false"
-            android:label="AR Hunt" />
-
-        <!-- Treasure Hunt soru ekranı -->
-        <activity
-            android:name=".TreasureHuntGameActivity"
-            android:exported="false"
-            android:label="Treasure Hunt Game" />
-
-        <!-- GİRİŞ EKRANI: SCOREBOARD (sadece bunda MAIN/LAUNCHER var) -->
-        <activity
-            android:name=".ScoreboardActivity"
             android:exported="true"
             android:label="@string/app_name">
             <intent-filter>
@@ -45,6 +24,16 @@
             </intent-filter>
         </activity>
 
-    </application>
+        <!-- 2️⃣ Scoreboard ekranı -->
+        <activity
+            android:name=".ScoreboardActivity"
+            android:label="Scoreboard"
+            android:theme="@style/Theme.OrientAR" />
 
+        <!-- 3️⃣ Kamera (AR) ekranı -->
+        <activity
+            android:name=".TreasureHuntGameActivity"
+            android:label="Treasure Hunt Game"
+            android:theme="@style/Theme.OrientAR" />
+    </application>
 </manifest>
