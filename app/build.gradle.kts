@@ -50,11 +50,11 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // AR
+    // ARCore & SceneView
     implementation("com.google.ar:core:1.43.0")
     implementation("io.github.sceneview:arsceneview:2.3.0")
 
-    // Compose
+    // Compose (MainActivity için)
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -68,4 +68,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+
 }

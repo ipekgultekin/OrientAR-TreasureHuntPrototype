@@ -2,7 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Kamera izni -->
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Donanım özellikleri -->
+    <uses-feature
+        android:name="android.hardware.camera.ar"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
 
     <application
         android:allowBackup="true"
@@ -13,7 +23,12 @@
         android:theme="@style/Theme.OrientAR"
         tools:targetApi="31">
 
-        <!-- 1️⃣ Uygulama açılınca Compose’lu MainActivity açılacak -->
+        <!-- ARCore gereksinimi -->
+        <meta-data
+            android:name="com.google.ar.core"
+            android:value="required" />
+
+        <!-- 1️⃣ Uygulama açılınca Compose’lu ana ekran -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -27,13 +42,19 @@
         <!-- 2️⃣ Scoreboard ekranı -->
         <activity
             android:name=".ScoreboardActivity"
+            android:exported="false"
             android:label="Scoreboard"
             android:theme="@style/Theme.OrientAR" />
 
-        <!-- 3️⃣ Kamera (AR) ekranı -->
+        <!-- 3️⃣ AR kamera (Treasure Hunt) ekranı -->
         <activity
             android:name=".TreasureHuntGameActivity"
+            android:exported="false"
             android:label="Treasure Hunt Game"
             android:theme="@style/Theme.OrientAR" />
+
+        <!-- GameState BİR ACTIVITY DEĞİL, o yüzden manifest'te OLMAMALI -->
+
     </application>
+
 </manifest>
