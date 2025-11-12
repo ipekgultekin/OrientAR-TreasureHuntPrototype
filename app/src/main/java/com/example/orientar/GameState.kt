@@ -20,8 +20,8 @@ object GameState {
             id = 1,
             title = "Question 1",
             text = "Find the image and keep it in view for 5s!",
-            answerImageName = "parents-aileler",                 // İSİM: dosya adı uzantısız
-            answerImageAssetPath = "augmented_images/parents-aileler.jpg",
+            answerImageName = "batur",                 // İSİM: dosya adı uzantısız
+            answerImageAssetPath = "augmented_images/parents-batur.jpg",
             modelFilePath = "3d_models/Backpack.glb"
         )
     )
