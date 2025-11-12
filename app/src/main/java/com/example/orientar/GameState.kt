@@ -14,8 +14,8 @@ object GameState {
             id = 1,
             title = "Question 1",
             text = "Everyone looks at me while passing by...",
-            answerImageName = "parents-aileler",                 // <-- isim
-            answerImageAssetPath = "augmented_images/parents-aileler.jpg", // <-- tam yol + doğru uzantı
+            answerImageName = "batur",                 // <-- isim
+            answerImageAssetPath = "augmented_images/batur.jpg", // <-- tam yol + doğru uzantı
             modelGlbAssetPath = "3d_models/Backpack.glb"
         )
     )
