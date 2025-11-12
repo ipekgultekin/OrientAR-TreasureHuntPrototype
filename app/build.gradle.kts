@@ -53,6 +53,7 @@ dependencies {
     // ARCore & SceneView
     implementation("com.google.ar:core:1.43.0")
     implementation("io.github.sceneview:arsceneview:2.3.0")
+    implementation("io.github.sceneview:sceneview:2.3.0")
 
     // Compose (MainActivity için)
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")

@@ -2,6 +2,7 @@ package com.example.orientar
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Button
@@ -11,8 +12,16 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.ar.core.AugmentedImage
+import com.google.ar.core.AugmentedImageDatabase
 import com.google.ar.core.Config
+import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.ARSceneView
+import io.github.sceneview.ar.node.AnchorNode          // ✅ AR anchor düğümü
+import io.github.sceneview.loaders.ModelLoader         // ✅ doğru ModelLoader
+import io.github.sceneview.node.ModelNode              // ✅ glb’yi tutan düğüm
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 class TreasureHuntGameActivity : AppCompatActivity() {
 
@@ -23,14 +32,16 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private lateinit var btnClose: Button
     private lateinit var btnNext: Button
 
+    private lateinit var modelLoader: ModelLoader
+
     private val CAMERA_REQ = 44
+    private val targetName = "batur"      // assets/augmented_images/batur.jpg
+    private var modelPlaced = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // This must be the AR layout (with ARSceneView@sceneView, Chronometer@chronoTimer, etc.)
         setContentView(R.layout.activity_main)
 
-        // View refs
         arSceneView     = findViewById(R.id.sceneView)
         chronoTimer     = findViewById(R.id.chronoTimer)
         tvQuestionTitle = findViewById(R.id.tvQuestionTitle)
@@ -38,74 +49,119 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         btnClose        = findViewById(R.id.btnClose)
         btnNext         = findViewById(R.id.btnNext)
 
-        tvQuestionTitle.text = "Question 1"
-        tvQuestionText.text  = "AR kamera AÇILDI mı diye test ediyoruz."
+        // 🔧 ModelLoader kurucusu: (engine, context, [opsiyonel coroutineScope])
+        modelLoader = ModelLoader(
+            engine = arSceneView.engine,
+            context = this,
+            coroutineScope = CoroutineScope(Dispatchers.IO)
+        )
 
+        tvQuestionTitle.text = "Question 1"
+        tvQuestionText.text  = "AR image tracking testi: batur.jpg"
         btnClose.setOnClickListener { finish() }
         btnNext.setOnClickListener  { Toast.makeText(this, "Next TODO", Toast.LENGTH_SHORT).show() }
 
-        // Timer 00:00’dan
         chronoTimer.base = SystemClock.elapsedRealtime()
         chronoTimer.start()
 
-        // 1) Kamera izni
         ensureCameraPermission()
 
-        // 2) ARCore oturumu hazır olunca
+        // 1) AR oturumu + Augmented Image DB
         arSceneView.onSessionCreated = { session ->
-            // Zemin/duvar plane’lerini görünür yap
             arSceneView.planeRenderer.isVisible = true
 
-            // AR config
-            val config = Config(session).apply {
+            val cfg = Config(session).apply {
                 focusMode = Config.FocusMode.AUTO
                 lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                depthMode = Config.DepthMode.AUTOMATIC
                 planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
                 instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
+                depthMode = Config.DepthMode.AUTOMATIC
             }
-            session.configure(config)
 
-            Toast.makeText(this, "AR oturumu hazır ✅", Toast.LENGTH_SHORT).show()
+            val imageDb = AugmentedImageDatabase(session).apply {
+                assets.open("augmented_images/batur.jpg").use { ins ->
+                    val bmp = BitmapFactory.decodeStream(ins)
+                    addImage(targetName, bmp)
+                }
+            }
+            cfg.augmentedImageDatabase = imageDb
+
+            try {
+                session.configure(cfg)
+            } catch (_: Exception) {
+                val fb = Config(session).apply {
+                    focusMode = Config.FocusMode.AUTO
+                    lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                    planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                    instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
+                    depthMode = Config.DepthMode.DISABLED
+                    augmentedImageDatabase = imageDb
+                }
+                session.configure(fb)
+            }
+
+            Toast.makeText(this, getString(R.string.ar_session_ready), Toast.LENGTH_SHORT).show()
         }
 
-        // 3) Her frame’de (şimdilik canlılık testi)
-        arSceneView.onSessionUpdated = { _, _ ->
-            // Augmented Images + model yerleştirme mantığını burada çalıştıracağız
+        // 2) Her framedeki image update’leri
+        arSceneView.onSessionUpdated = { _, frame ->
+            if (!modelPlaced) {                         // ✅ label return yok
+                val images = frame.getUpdatedTrackables(AugmentedImage::class.java)
+                for (img in images) {
+                    if (img.trackingState == TrackingState.TRACKING && img.name == targetName) {
+                        placeModelOnImage(img)
+                        modelPlaced = true
+                        break
+                    }
+                }
+            }
         }
 
-        // 4) Hata olursa
-        arSceneView.onSessionFailed = { exception ->
-            Toast.makeText(this, "AR hata: ${exception.message}", Toast.LENGTH_LONG).show()
+        // 3) Hata
+        arSceneView.onSessionFailed = { e ->
+            Toast.makeText(this, "AR hata: ${e.message ?: "NULL"}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun placeModelOnImage(image: AugmentedImage) {
+        val anchor = image.createAnchor(image.centerPose)
+
+        // GLB -> ModelInstance
+        val modelInstance = modelLoader.createModelInstance(
+            assetFileLocation = "file:///android_asset/3d_models/Backpack.glb"
+        )
+
+        // Model düğümü
+        val modelNode = ModelNode(
+            modelInstance = modelInstance,
+            scaleToUnits = 0.35f
+        )
+
+        // Anchor tutan AR düğümü (ebeveyn)
+        val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
+        anchorNode.addChildNode(modelNode)
+
+        // Sahneye ekle
+        arSceneView.addChildNode(anchorNode)
+
+        Toast.makeText(this, getString(R.string.model_loaded), Toast.LENGTH_SHORT).show()
     }
 
     private fun ensureCameraPermission() {
         val granted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.CAMERA
         ) == PackageManager.PERMISSION_GRANTED
-
         if (!granted) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                CAMERA_REQ
-            )
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_REQ)
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_REQ && grantResults.isNotEmpty()
-            && grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            Toast.makeText(this, "Kamera izni verildi", Toast.LENGTH_SHORT).show()
-        } else if (requestCode == CAMERA_REQ) {
-            Toast.makeText(this, "Kamera izni gerekli!", Toast.LENGTH_LONG).show()
+    override fun onRequestPermissionsResult(req: Int, perms: Array<out String>, res: IntArray) {
+        super.onRequestPermissionsResult(req, perms, res)
+        if (req == CAMERA_REQ && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, getString(R.string.camera_permission_granted), Toast.LENGTH_SHORT).show()
+        } else if (req == CAMERA_REQ) {
+            Toast.makeText(this, getString(R.string.camera_permission_required), Toast.LENGTH_LONG).show()
             finish()
         }
     }
