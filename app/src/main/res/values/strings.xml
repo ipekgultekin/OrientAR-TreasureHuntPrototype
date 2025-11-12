@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_name">OrientAR</string>
     <string name="model_loaded">Model yüklendi</string>
     <string name="ar_session_ready">AR oturumu + ImageDB hazır ✅</string>
     <string name="next_todo">Next TODO</string>

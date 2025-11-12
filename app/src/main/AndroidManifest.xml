@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- İzinler -->
-    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- Donanım özellikleri -->
-    <!-- Cihaz ARCore desteklemeli (uygulama AR’sız açılmasın istiyorsan required=true doğru) -->
+    <!-- ARCore ve OpenGL ES 3.0 şart -->
     <uses-feature
         android:name="android.hardware.camera.ar"
-        android:required="true"/>
-    <!-- Arka/ön kamera şart değil -->
+        android:required="true" />
+    <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="true" />
+    <!-- Arka/ön kamera koşul değil (ARCore zaten AR camera özelliğiyle çalışacak) -->
     <uses-feature
         android:name="android.hardware.camera"
-        android:required="false"/>
+        android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -24,20 +28,20 @@
         android:theme="@style/Theme.OrientAR"
         tools:targetApi="31">
 
-        <!-- SceneView’in manifestindeki optional değerle çakışmayı çözer -->
+        <!-- ARCore zorunlu: SceneView manifestindeki varsayılan değeri override ediyoruz -->
         <meta-data
             android:name="com.google.ar.core"
             android:value="required"
-            tools:replace="android:value"/>
+            tools:replace="android:value" />
 
-        <!-- Launch activity -->
+        <!-- Launcher -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -46,13 +50,13 @@
             android:name=".ScoreboardActivity"
             android:exported="false"
             android:label="Scoreboard"
-            android:theme="@style/Theme.OrientAR"/>
+            android:theme="@style/Theme.OrientAR" />
 
-        <!-- AR kamera -->
+        <!-- AR Kamera (oyun) -->
         <activity
             android:name=".TreasureHuntGameActivity"
             android:exported="false"
             android:label="Treasure Hunt Game"
-            android:theme="@style/Theme.OrientAR"/>
+            android:theme="@style/Theme.OrientAR" />
     </application>
 </manifest>
