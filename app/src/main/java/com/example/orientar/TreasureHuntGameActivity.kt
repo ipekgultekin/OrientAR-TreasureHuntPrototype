@@ -163,16 +163,17 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     }
 
     private fun placeModelAtAnchor(anchor: com.google.ar.core.Anchor) {
-        val modelInstance = modelLoader.createModelInstance(
-            assetFileLocation = "file:///android_asset/3d_models/Backpack.glb"
-        )
-        val modelNode = ModelNode(
-            modelInstance = modelInstance,
-            scaleToUnits = 0.35f
-        )
-        val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
-        anchorNode.addChildNode(modelNode)
-        arSceneView.addChildNode(anchorNode)
+        try {
+            val modelInstance = modelLoader.createModelInstance(
+                assetFileLocation = "3d_models/Backpack.glb"
+            )
+            val modelNode = ModelNode(modelInstance = modelInstance, scaleToUnits = 0.35f)
+            val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
+            anchorNode.addChildNode(modelNode)
+            arSceneView.addChildNode(anchorNode)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Model load error: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun ensureCameraPermission() {
