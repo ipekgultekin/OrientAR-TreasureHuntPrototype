@@ -1,6 +1,7 @@
 package com.example.orientar
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -9,6 +10,7 @@ import android.widget.Button
 import android.widget.Chronometer
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -17,9 +19,9 @@ import com.google.ar.core.AugmentedImageDatabase
 import com.google.ar.core.Config
 import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.ARSceneView
-import io.github.sceneview.ar.node.AnchorNode          // ✅ AR anchor düğümü
-import io.github.sceneview.loaders.ModelLoader         // ✅ doğru ModelLoader
-import io.github.sceneview.node.ModelNode              // ✅ glb’yi tutan düğüm
+import io.github.sceneview.ar.node.AnchorNode
+import io.github.sceneview.loaders.ModelLoader
+import io.github.sceneview.node.ModelNode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
@@ -35,44 +37,44 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private lateinit var modelLoader: ModelLoader
 
     private val CAMERA_REQ = 44
-    private val targetName = "batur"      // assets/augmented_images/batur.jpg
+
+    // ----- aktif soru / model bilgisi -----
+    private lateinit var currentQuestion: Question
+    private var targetName: String = ""
+    private var modelPath: String = ""
+
+    // ----- run-time flags -----
     private var modelPlaced = false
-    private val tapQueue = java.util.concurrent.ConcurrentLinkedQueue<android.view.MotionEvent>()
+    private var popupShown = false
+    private var questionStartMs: Long = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         arSceneView     = findViewById(R.id.sceneView)
-        // Kullanıcı dokununca olayı sıraya koy
-        arSceneView.setOnTouchListener { _, e ->
-            if (e.action == android.view.MotionEvent.ACTION_UP) {
-                tapQueue.add(android.view.MotionEvent.obtain(e))
-            }
-            true
-        }
         chronoTimer     = findViewById(R.id.chronoTimer)
         tvQuestionTitle = findViewById(R.id.tvQuestionTitle)
         tvQuestionText  = findViewById(R.id.tvQuestionText)
         btnClose        = findViewById(R.id.btnClose)
         btnNext         = findViewById(R.id.btnNext)
 
-        // 🔧 ModelLoader kurucusu: (engine, context, [opsiyonel coroutineScope])
         modelLoader = ModelLoader(
             engine = arSceneView.engine,
             context = this,
             coroutineScope = CoroutineScope(Dispatchers.IO)
         )
 
-        tvQuestionTitle.text = "Question 1"
-        tvQuestionText.text  = "AR image tracking testi: batur.jpg"
         btnClose.setOnClickListener { finish() }
-        btnNext.setOnClickListener  { Toast.makeText(this, "Next TODO", Toast.LENGTH_SHORT).show() }
-
-        chronoTimer.base = SystemClock.elapsedRealtime()
-        chronoTimer.start()
+        btnNext.setOnClickListener  {
+            Toast.makeText(this, "Use the camera to find the answers!", Toast.LENGTH_SHORT).show()
+        }
 
         ensureCameraPermission()
+
+        // İlk soruyu yükle (ilk çözülmemiş olan)
+        val firstQ = GameState.nextUnsolved() ?: GameState.questions.first()
+        loadQuestion(firstQ)
 
         // 1) AR oturumu + Augmented Image DB
         arSceneView.onSessionCreated = { session ->
@@ -86,10 +88,13 @@ class TreasureHuntGameActivity : AppCompatActivity() {
                 depthMode = Config.DepthMode.AUTOMATIC
             }
 
+            // Tüm sorulardaki görselleri DB'ye ekle
             val imageDb = AugmentedImageDatabase(session).apply {
-                assets.open("augmented_images/batur.jpg").use { ins ->
-                    val bmp = BitmapFactory.decodeStream(ins)
-                    addImage(targetName, bmp)
+                for (q in GameState.questions) {
+                    assets.open(q.answerImageAssetPath).use { ins ->
+                        val bmp = BitmapFactory.decodeStream(ins)
+                        addImage(q.answerImageName, bmp)
+                    }
                 }
             }
             cfg.augmentedImageDatabase = imageDb
@@ -111,69 +116,125 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.ar_session_ready), Toast.LENGTH_SHORT).show()
         }
 
-        // 2) Her framedeki image update’leri
+        // 2) Frame başına: sadece AKTİF sorunun görseline tepki ver
         arSceneView.onSessionUpdated = { _, frame ->
-            if (!modelPlaced) {                         // ✅ label return yok
+            if (!modelPlaced) {
                 val images = frame.getUpdatedTrackables(AugmentedImage::class.java)
                 for (img in images) {
-                    if (img.trackingState == TrackingState.TRACKING && img.name == targetName) {
-                        placeModelOnImage(img)
-                        modelPlaced = true
-                        break
+                    if (img.trackingState == TrackingState.TRACKING) {
+                        // Bu tracked görsel hangi soruya ait?
+                        val q = GameState.questions.firstOrNull { it.answerImageName == img.name }
+                        if (q != null) {
+                            // Model path'ini soruya göre ayarla
+                            modelPath = q.modelFilePath
+
+                            // Sadece AKTİF sorunun hedef ismi ise tetikle
+                            if (img.name == targetName) {
+                                placeModelOnImage(img)
+                                showCorrectDialog(q.id)
+                                modelPlaced = true
+                                break
+                            }
+                        }
                     }
-                }
-            }
-            val tap = tapQueue.poll()
-            if (tap != null) {
-                val sel = pickBestHit(frame, tap, arSceneView.width, arSceneView.height)
-                if (sel != null) {
-                    placeModelAtAnchor(sel.anchor) // Aşağıdaki fonksiyon
                 }
             }
         }
 
         // 3) Hata
         arSceneView.onSessionFailed = { e ->
-            Toast.makeText(this, "AR hata: ${e.message ?: "NULL"}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "AR error: ${e.message ?: "NULL"}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    // Aktif soruyu UI + state'e yükleyen fonksiyon
+    private fun loadQuestion(q: Question) {
+        currentQuestion = q
+        targetName = q.answerImageName
+        modelPath = q.modelFilePath
+
+        tvQuestionTitle.text = q.title
+        tvQuestionText.text = q.text
+
+        // Yeni soru için state reset
+        modelPlaced = false
+        popupShown = false
+
+        // Süreyi sıfırla
+        questionStartMs = SystemClock.elapsedRealtime()
+        chronoTimer.stop()
+        chronoTimer.base = questionStartMs
+        chronoTimer.start()
     }
 
     private fun placeModelOnImage(image: AugmentedImage) {
-        val anchor = image.createAnchor(image.centerPose)
-
-        // GLB -> ModelInstance
-        val modelInstance = modelLoader.createModelInstance(
-            assetFileLocation = "file:///android_asset/3d_models/Backpack.glb"
-        )
-
-        // Model düğümü
-        val modelNode = ModelNode(
-            modelInstance = modelInstance,
-            scaleToUnits = 0.35f
-        )
-
-        // Anchor tutan AR düğümü (ebeveyn)
-        val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
-        anchorNode.addChildNode(modelNode)
-
-        // Sahneye ekle
-        arSceneView.addChildNode(anchorNode)
-
-        Toast.makeText(this, getString(R.string.model_loaded), Toast.LENGTH_SHORT).show()
-    }
-
-    private fun placeModelAtAnchor(anchor: com.google.ar.core.Anchor) {
         try {
+            val anchor = image.createAnchor(image.centerPose)
+
+            // "file:///android_asset/..." DEĞİL – sadece relative path
             val modelInstance = modelLoader.createModelInstance(
-                assetFileLocation = "3d_models/Backpack.glb"
+                assetFileLocation = modelPath
             )
-            val modelNode = ModelNode(modelInstance = modelInstance, scaleToUnits = 0.35f)
+
+            val modelNode = ModelNode(
+                modelInstance = modelInstance,
+                scaleToUnits = 0.35f
+            )
+
             val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
             anchorNode.addChildNode(modelNode)
             arSceneView.addChildNode(anchorNode)
+
+            Toast.makeText(this, getString(R.string.model_loaded), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Model load error: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun showCorrectDialog(questionId: Int) {
+        if (popupShown) return
+        popupShown = true
+
+        val elapsedMs = SystemClock.elapsedRealtime() - questionStartMs
+        GameState.markSolved(questionId, elapsedMs)
+
+        val allSolved = GameState.totalSolved == GameState.totalQuestions()
+
+        val msg = if (allSolved) {
+            "You answered all questions!\n" +
+                    "Solved: ${GameState.totalSolved}/${GameState.totalQuestions()}\n" +
+                    "Total time: ${GameState.totalTimeMs / 1000.0} s"
+        } else {
+            "Correct answer!\nGet ready for the next question ✨"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Correct!")
+            .setMessage(msg)
+            .setCancelable(false)
+            .setPositiveButton(
+                if (allSolved) "See Scoreboard" else "Next Question"
+            ) { d, _ ->
+                d.dismiss()
+                if (allSolved) {
+                    // Tüm sorular bitti → Scoreboard'a git
+                    val intent = Intent(this, ScoreboardActivity::class.java)
+                    startActivity(intent)
+                    finish()
+                } else {
+                    // Sonraki çözülmemiş soruyu yükle
+                    val nextQ = GameState.nextUnsolved()
+                    if (nextQ != null) {
+                        loadQuestion(nextQ)
+                    } else {
+                        // Güvenlik için (normalde buraya düşmez)
+                        val intent = Intent(this, ScoreboardActivity::class.java)
+                        startActivity(intent)
+                        finish()
+                    }
+                }
+            }
+            .show()
     }
 
     private fun ensureCameraPermission() {
@@ -199,59 +260,5 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         super.onDestroy()
         chronoTimer.stop()
         arSceneView.destroy()
-    }
-
-    // --- Session konfigürasyonu (kullansan da olur kullanmasan da mevcut ayarlarınıza uyumlu) ---
-    private fun configureSession(session: com.google.ar.core.Session) {
-        val cfg = com.google.ar.core.Config(session).apply {
-            focusMode = com.google.ar.core.Config.FocusMode.AUTO
-            lightEstimationMode = com.google.ar.core.Config.LightEstimationMode.ENVIRONMENTAL_HDR
-            planeFindingMode = com.google.ar.core.Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-            instantPlacementMode = com.google.ar.core.Config.InstantPlacementMode.LOCAL_Y_UP
-            if (session.isDepthModeSupported(com.google.ar.core.Config.DepthMode.AUTOMATIC)) {
-                depthMode = com.google.ar.core.Config.DepthMode.AUTOMATIC
-            }
-        }
-        session.configure(cfg)
-    }
-
-    // --- Ekrana dokunma veya ekran merkezinden en iyi vurumu (hit) seç ---
-    private data class HitResultSelection(
-        val anchor: com.google.ar.core.Anchor,
-        val trackable: com.google.ar.core.Trackable
-    )
-
-    private fun pickBestHit(
-        frame: com.google.ar.core.Frame,
-        motionEvent: android.view.MotionEvent?,
-        viewWidth: Int,
-        viewHeight: Int
-    ): HitResultSelection? {
-        val camera = frame.camera
-        if (camera.trackingState != com.google.ar.core.TrackingState.TRACKING) return null
-
-        val touchHits = motionEvent?.let { frame.hitTest(it) } ?: emptyList()
-        val centerHits = if (touchHits.isEmpty()) frame.hitTest(viewWidth / 2f, viewHeight / 2f) else emptyList()
-        val candidates = touchHits + centerHits
-
-        for (hit in candidates) {
-            when (val t = hit.trackable) {
-                is com.google.ar.core.Plane ->
-                    if (t.isPoseInPolygon(hit.hitPose)) return HitResultSelection(hit.createAnchor(), t)
-                is com.google.ar.core.Point ->
-                    if (t.orientationMode == com.google.ar.core.Point.OrientationMode.ESTIMATED_SURFACE_NORMAL)
-                        return HitResultSelection(hit.createAnchor(), t)
-                is com.google.ar.core.InstantPlacementPoint ->
-                    return HitResultSelection(hit.createAnchor(), t)
-            }
-        }
-
-        val (rx, ry) = motionEvent?.let { it.x to it.y } ?: (viewWidth / 2f to viewHeight / 2f)
-        val instant = frame.hitTestInstantPlacement(rx, ry, 1.0f)
-        if (instant.isNotEmpty()) {
-            val h = instant.first()
-            return HitResultSelection(h.createAnchor(), h.trackable)
-        }
-        return null
     }
 }

@@ -5,7 +5,7 @@ data class Question(
     val id: Int,
     val title: String,
     val text: String,
-    // Augmented Image ismi (DB'ye eklerken verdiğimiz ad)
+    // Augmented Image ismi (DB'ye eklerken verdiğimiz ad – uzantısız)
     val answerImageName: String,
     // assets içindeki görüntü yolu
     val answerImageAssetPath: String,
@@ -14,23 +14,31 @@ data class Question(
 )
 
 object GameState {
-    // Örnek tek soru (dosya adlarını kendi asset'lerinle eşleştir)
+
+    // ───── Sorular ─────
     val questions: MutableList<Question> = mutableListOf(
         Question(
             id = 1,
             title = "Question 1",
-            text = "Find the image and keep it in view for 5s!",
-            answerImageName = "batur",                 // İSİM: dosya adı uzantısız
-            answerImageAssetPath = "augmented_images/parents-batur.jpg",
+            text = "Find the Batur image and keep it in view!",
+            answerImageName = "batur",                     // assets/augmented_images/batur.jpg
+            answerImageAssetPath = "augmented_images/batur.jpg",
             modelFilePath = "3d_models/Backpack.glb"
+        ),
+        Question(
+            id = 2,
+            title = "Question 2",
+            text = "Find İpek and unlock the glasses!",
+            answerImageName = "ipek",                      // assets/augmented_images/ipek.jpg
+            answerImageAssetPath = "augmented_images/ipek.jpg",
+            modelFilePath = "3d_models/glasses3d.glb"
         )
     )
 
-    // === Skor durumları ===
+    // ───── Skor / süre durumu ─────
     private val solvedIds = mutableSetOf<Int>()
     private var _totalTimeMs: Long = 0L
 
-    // ScoreboardActivity'nin beklediği üyeler:
     val totalSolved: Int
         get() = solvedIds.size
 
@@ -40,11 +48,16 @@ object GameState {
     fun totalQuestions(): Int = questions.size
 
     fun markSolved(questionId: Int, elapsedMs: Long) {
-        // Aynı soru iki kere çözülmesin
+        // Aynı soru ikinci kez sayılmasın
         if (solvedIds.add(questionId)) {
             _totalTimeMs += elapsedMs
         }
     }
+
+    fun isSolved(id: Int): Boolean = solvedIds.contains(id)
+
+    fun nextUnsolved(): Question? =
+        questions.firstOrNull { !solvedIds.contains(it.id) }
 
     fun reset() {
         solvedIds.clear()
