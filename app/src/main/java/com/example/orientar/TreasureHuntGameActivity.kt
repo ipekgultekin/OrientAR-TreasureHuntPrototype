@@ -40,16 +40,18 @@ class TreasureHuntGameActivity : AppCompatActivity() {
 
     // ----- aktif soru / model bilgisi -----
     private lateinit var currentQuestion: Question
-    private var targetName: String = ""
-    private var modelPath: String = ""
+    private var targetName: String = ""      // aktif sorunun image adı
+    private var modelPath: String = ""       // aktif sorunun model yolu (istersen kullanırsın)
 
     // ----- run-time flags -----
     private var modelPlaced = false
     private var popupShown = false
     private var questionStartMs: Long = 0L
+    private var currentAnchorNode: AnchorNode? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // AR oyun layout’un hangisiyse onu kullan
         setContentView(R.layout.activity_main)
 
         arSceneView     = findViewById(R.id.sceneView)
@@ -66,11 +68,15 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         )
 
         btnClose.setOnClickListener { finish() }
-        btnNext.setOnClickListener  {
+        btnNext.setOnClickListener {
             Toast.makeText(this, "Use the camera to find the answers!", Toast.LENGTH_SHORT).show()
         }
 
         ensureCameraPermission()
+
+        // Ekrandaki timer oyunun toplam süresini göstersin
+        chronoTimer.base = SystemClock.elapsedRealtime()
+        chronoTimer.start()
 
         // İlk soruyu yükle (ilk çözülmemiş olan)
         val firstQ = GameState.nextUnsolved() ?: GameState.questions.first()
@@ -116,26 +122,19 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.ar_session_ready), Toast.LENGTH_SHORT).show()
         }
 
-        // 2) Frame başına: sadece AKTİF sorunun görseline tepki ver
+        // 2) Her framede: SADECE aktif sorunun görseline tepki ver
         arSceneView.onSessionUpdated = { _, frame ->
             if (!modelPlaced) {
                 val images = frame.getUpdatedTrackables(AugmentedImage::class.java)
                 for (img in images) {
-                    if (img.trackingState == TrackingState.TRACKING) {
-                        // Bu tracked görsel hangi soruya ait?
-                        val q = GameState.questions.firstOrNull { it.answerImageName == img.name }
-                        if (q != null) {
-                            // Model path'ini soruya göre ayarla
-                            modelPath = q.modelFilePath
-
-                            // Sadece AKTİF sorunun hedef ismi ise tetikle
-                            if (img.name == targetName) {
-                                placeModelOnImage(img)
-                                showCorrectDialog(q.id)
-                                modelPlaced = true
-                                break
-                            }
-                        }
+                    if (img.trackingState == TrackingState.TRACKING &&
+                        img.name == targetName
+                    ) {
+                        // Aktif sorunun görseli bulundu
+                        placeModelOnImage(img)
+                        showCorrectDialog(currentQuestion.id)
+                        modelPlaced = true
+                        break
                     }
                 }
             }
@@ -153,44 +152,53 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         targetName = q.answerImageName
         modelPath = q.modelFilePath
 
-        tvQuestionTitle.text = q.title
-        tvQuestionText.text = q.text
+        tvQuestionTitle.text = "Question ${q.id}"
+        tvQuestionText.text  = q.text
 
-        // Yeni soru için state reset
+        // Eski modeli sahneden kaldır
+        currentAnchorNode?.let { old ->
+            arSceneView.removeChildNode(old)
+            old.destroy()
+        }
+        currentAnchorNode = null
+
         modelPlaced = false
         popupShown = false
-
-        // Süreyi sıfırla
         questionStartMs = SystemClock.elapsedRealtime()
-        chronoTimer.stop()
-        chronoTimer.base = questionStartMs
-        chronoTimer.start()
     }
 
     private fun placeModelOnImage(image: AugmentedImage) {
         try {
-            // Hangi görsel ise ona göre model seç
+            // İstersen GameState üzerinden de gidebilirsin ama şu an iki soru için böyle:
             val modelFile = when (image.name) {
                 "batur" -> "3d_models/3d_camera_01.glb"
                 "ipek"  -> "3d_models/glasses3d.glb"
-                else    -> return
+                else    -> return   // tanımadığımız isim, boşver
             }
 
             val anchor = image.createAnchor(image.centerPose)
 
-            // DİKKAT: "file:///android_asset/..." YOK
             val modelInstance = modelLoader.createModelInstance(
                 assetFileLocation = modelFile      // assets/3d_models/...
             )
 
             val modelNode = ModelNode(
                 modelInstance = modelInstance,
-                scaleToUnits = 0.35f
+                scaleToUnits = 0.08f              // burada boyut ayarı
             )
+
+            // Önce eski modeli sahneden kaldır
+            currentAnchorNode?.let { old ->
+                arSceneView.removeChildNode(old)
+                old.destroy()
+            }
 
             val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
             anchorNode.addChildNode(modelNode)
             arSceneView.addChildNode(anchorNode)
+
+            // Şimdiki modeli sakla
+            currentAnchorNode = anchorNode
 
             Toast.makeText(this, getString(R.string.model_loaded), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
@@ -198,7 +206,6 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             e.printStackTrace()
         }
     }
-
 
     private fun showCorrectDialog(questionId: Int) {
         if (popupShown) return
@@ -236,7 +243,7 @@ class TreasureHuntGameActivity : AppCompatActivity() {
                     if (nextQ != null) {
                         loadQuestion(nextQ)
                     } else {
-                        // Güvenlik için (normalde buraya düşmez)
+                        // güvenlik için
                         val intent = Intent(this, ScoreboardActivity::class.java)
                         startActivity(intent)
                         finish()
