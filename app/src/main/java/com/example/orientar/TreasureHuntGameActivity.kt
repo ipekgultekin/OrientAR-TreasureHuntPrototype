@@ -169,11 +169,18 @@ class TreasureHuntGameActivity : AppCompatActivity() {
 
     private fun placeModelOnImage(image: AugmentedImage) {
         try {
+            // Hangi görsel ise ona göre model seç
+            val modelFile = when (image.name) {
+                "batur" -> "3d_models/3d_camera_01.glb"
+                "ipek"  -> "3d_models/glasses3d.glb"
+                else    -> return
+            }
+
             val anchor = image.createAnchor(image.centerPose)
 
-            // "file:///android_asset/..." DEĞİL – sadece relative path
+            // DİKKAT: "file:///android_asset/..." YOK
             val modelInstance = modelLoader.createModelInstance(
-                assetFileLocation = modelPath
+                assetFileLocation = modelFile      // assets/3d_models/...
             )
 
             val modelNode = ModelNode(
@@ -188,8 +195,10 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.model_loaded), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Model load error: ${e.message}", Toast.LENGTH_LONG).show()
+            e.printStackTrace()
         }
     }
+
 
     private fun showCorrectDialog(questionId: Int) {
         if (popupShown) return

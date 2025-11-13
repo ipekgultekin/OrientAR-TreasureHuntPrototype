@@ -50,7 +50,7 @@
             android:name=".ScoreboardActivity"
             android:exported="false"
             android:label="Scoreboard"
-            android:theme="@style/Theme.OrientAR" />
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
 
         <!-- AR Kamera (oyun) -->
         <activity

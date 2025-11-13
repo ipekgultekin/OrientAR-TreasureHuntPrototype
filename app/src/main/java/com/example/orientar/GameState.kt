@@ -23,7 +23,7 @@ object GameState {
             text = "Find the Batur image and keep it in view!",
             answerImageName = "batur",                     // assets/augmented_images/batur.jpg
             answerImageAssetPath = "augmented_images/batur.jpg",
-            modelFilePath = "3d_models/Backpack.glb"
+            modelFilePath = "3d_models/3d_camera_01.glb"
         ),
         Question(
             id = 2,
