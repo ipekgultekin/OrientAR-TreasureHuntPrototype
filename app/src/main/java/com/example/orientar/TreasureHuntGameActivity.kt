@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.widget.Button
 import android.widget.Chronometer
@@ -21,9 +23,11 @@ import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.node.AnchorNode
 import io.github.sceneview.loaders.ModelLoader
+import io.github.sceneview.math.Rotation
 import io.github.sceneview.node.ModelNode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import android.widget.ImageButton
 
 class TreasureHuntGameActivity : AppCompatActivity() {
 
@@ -31,7 +35,7 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private lateinit var chronoTimer: Chronometer
     private lateinit var tvQuestionTitle: TextView
     private lateinit var tvQuestionText: TextView
-    private lateinit var btnClose: Button
+    private lateinit var btnClose: ImageButton
     private lateinit var btnNext: Button
 
     private lateinit var modelLoader: ModelLoader
@@ -40,8 +44,7 @@ class TreasureHuntGameActivity : AppCompatActivity() {
 
     // ----- aktif soru / model bilgisi -----
     private lateinit var currentQuestion: Question
-    private var targetName: String = ""      // aktif sorunun image adı
-    private var modelPath: String = ""       // aktif sorunun model yolu (istersen kullanırsın)
+    private var targetName: String = ""     // aktif sorunun image adı
 
     // ----- run-time flags -----
     private var modelPlaced = false
@@ -49,10 +52,14 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private var questionStartMs: Long = 0L
     private var currentAnchorNode: AnchorNode? = null
 
+    // popup geciktirme için
+    private val popupDelayMs = 8000L          // 8 saniye
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingPopupRunnable: Runnable? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // AR oyun layout’un hangisiyse onu kullan
-        setContentView(R.layout.activity_main)
+        setContentView(R.layout.activity_treasure_hunt_game)   // <-- kendi layout’un
 
         arSceneView     = findViewById(R.id.sceneView)
         chronoTimer     = findViewById(R.id.chronoTimer)
@@ -68,15 +75,9 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         )
 
         btnClose.setOnClickListener { finish() }
-        btnNext.setOnClickListener {
-            Toast.makeText(this, "Use the camera to find the answers!", Toast.LENGTH_SHORT).show()
-        }
+        btnNext.setOnClickListener  { goToNextQuestion() }
 
         ensureCameraPermission()
-
-        // Ekrandaki timer oyunun toplam süresini göstersin
-        chronoTimer.base = SystemClock.elapsedRealtime()
-        chronoTimer.start()
 
         // İlk soruyu yükle (ilk çözülmemiş olan)
         val firstQ = GameState.nextUnsolved() ?: GameState.questions.first()
@@ -122,7 +123,7 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             Toast.makeText(this, getString(R.string.ar_session_ready), Toast.LENGTH_SHORT).show()
         }
 
-        // 2) Her framede: SADECE aktif sorunun görseline tepki ver
+        // 2) Frame başına: sadece AKTİF sorunun görseline tepki ver
         arSceneView.onSessionUpdated = { _, frame ->
             if (!modelPlaced) {
                 val images = frame.getUpdatedTrackables(AugmentedImage::class.java)
@@ -130,10 +131,10 @@ class TreasureHuntGameActivity : AppCompatActivity() {
                     if (img.trackingState == TrackingState.TRACKING &&
                         img.name == targetName
                     ) {
-                        // Aktif sorunun görseli bulundu
-                        placeModelOnImage(img)
-                        showCorrectDialog(currentQuestion.id)
+                        // Sadece aktif sorunun image adı geldiyse
+                        placeModelOnImage(img, currentQuestion)
                         modelPlaced = true
+                        scheduleCorrectPopup(currentQuestion.id)   // 8 sn sonra popup
                         break
                     }
                 }
@@ -150,66 +151,85 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private fun loadQuestion(q: Question) {
         currentQuestion = q
         targetName = q.answerImageName
-        modelPath = q.modelFilePath
 
-        tvQuestionTitle.text = "Question ${q.id}"
+        tvQuestionTitle.text = q.title
         tvQuestionText.text  = q.text
 
-        // Eski modeli sahneden kaldır
+        // Kronometreyi sıfırla
+        questionStartMs = SystemClock.elapsedRealtime()
+        chronoTimer.base = questionStartMs
+        chronoTimer.start()
+
+        // Eski popup timer'ı iptal et
+        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingPopupRunnable = null
+        popupShown = false
+
+        // Eski modeli komple temizle
         currentAnchorNode?.let { old ->
             arSceneView.removeChildNode(old)
             old.destroy()
         }
         currentAnchorNode = null
-
         modelPlaced = false
-        popupShown = false
-        questionStartMs = SystemClock.elapsedRealtime()
     }
 
-    private fun placeModelOnImage(image: AugmentedImage) {
+    private fun placeModelOnImage(image: AugmentedImage, question: Question) {
         try {
-            // İstersen GameState üzerinden de gidebilirsin ama şu an iki soru için böyle:
-            val modelFile = when (image.name) {
-                "batur" -> "3d_models/3d_camera_01.glb"
-                "ipek"  -> "3d_models/glasses3d.glb"
-                else    -> return   // tanımadığımız isim, boşver
-            }
-
             val anchor = image.createAnchor(image.centerPose)
 
-            val modelInstance = modelLoader.createModelInstance(
-                assetFileLocation = modelFile      // assets/3d_models/...
-            )
+            val modelInstance = modelLoader.createModelInstance(question.modelFilePath)
 
             val modelNode = ModelNode(
                 modelInstance = modelInstance,
-                scaleToUnits = 0.08f              // burada boyut ayarı
-            )
+                scaleToUnits = question.modelScale
+            ).apply {
+                // Y ekseni etrafında döndür (kamera önüne düz baksın)
+                rotation = Rotation(0f, question.modelRotationY, 0f)
+            }
 
-            // Önce eski modeli sahneden kaldır
+            // Eski modeli sil
             currentAnchorNode?.let { old ->
                 arSceneView.removeChildNode(old)
                 old.destroy()
             }
 
-            val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
+            val anchorNode = AnchorNode(
+                engine = arSceneView.engine,
+                anchor = anchor
+            )
+
             anchorNode.addChildNode(modelNode)
             arSceneView.addChildNode(anchorNode)
 
-            // Şimdiki modeli sakla
             currentAnchorNode = anchorNode
 
-            Toast.makeText(this, getString(R.string.model_loaded), Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Model load error: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
         }
     }
 
+    // Popup'u hemen değil, belirli bir gecikmeyle göster
+    private fun scheduleCorrectPopup(questionId: Int) {
+        if (popupShown) return
+
+        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
+
+        val runnable = Runnable {
+            if (!isFinishing) {
+                showCorrectDialog(questionId)
+            }
+        }
+        pendingPopupRunnable = runnable
+        mainHandler.postDelayed(runnable, popupDelayMs)
+    }
+
     private fun showCorrectDialog(questionId: Int) {
         if (popupShown) return
         popupShown = true
+
+        chronoTimer.stop()
 
         val elapsedMs = SystemClock.elapsedRealtime() - questionStartMs
         GameState.markSolved(questionId, elapsedMs)
@@ -233,17 +253,14 @@ class TreasureHuntGameActivity : AppCompatActivity() {
             ) { d, _ ->
                 d.dismiss()
                 if (allSolved) {
-                    // Tüm sorular bitti → Scoreboard'a git
                     val intent = Intent(this, ScoreboardActivity::class.java)
                     startActivity(intent)
                     finish()
                 } else {
-                    // Sonraki çözülmemiş soruyu yükle
                     val nextQ = GameState.nextUnsolved()
                     if (nextQ != null) {
                         loadQuestion(nextQ)
                     } else {
-                        // güvenlik için
                         val intent = Intent(this, ScoreboardActivity::class.java)
                         startActivity(intent)
                         finish()
@@ -274,7 +291,25 @@ class TreasureHuntGameActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
         chronoTimer.stop()
         arSceneView.destroy()
+    }
+
+    private fun goToNextQuestion() {
+        // Eğer hala popup için bekleyen runnable varsa iptal et
+        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingPopupRunnable = null
+        popupShown = false
+
+        // Şu anki sorunun index'ini bul
+        val currentIndex = GameState.questions.indexOfFirst { it.id == currentQuestion.id }
+
+        if (currentIndex != -1 && currentIndex < GameState.questions.size - 1) {
+            val nextQ = GameState.questions[currentIndex + 1]
+            loadQuestion(nextQ)   // model temizleme + chrono reset içeride
+        } else {
+            Toast.makeText(this, "This is the last question.", Toast.LENGTH_SHORT).show()
+        }
     }
 }

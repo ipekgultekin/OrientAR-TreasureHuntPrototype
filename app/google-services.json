@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1014871075708",
+    "project_id": "orientar-57024",
+    "storage_bucket": "orientar-57024.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1014871075708:android:095eb4d2c3f9f564e052f9",
+        "android_client_info": {
+          "package_name": "com.example.orientar"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtb86kENp9masfO2TNk3tC-fPW1Z8evMI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

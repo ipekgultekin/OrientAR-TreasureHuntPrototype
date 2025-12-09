@@ -10,7 +10,11 @@ data class Question(
     // assets içindeki görüntü yolu
     val answerImageAssetPath: String,
     // assets içindeki .glb yolu (ör: "3d_models/Backpack.glb")
-    val modelFilePath: String
+    val modelFilePath: String,
+    // 3D model ölçeği
+    val modelScale: Float,
+    // Y ekseni etrafındaki döndürme (derece cinsinden)
+    val modelRotationY: Float
 )
 
 object GameState {
@@ -21,9 +25,11 @@ object GameState {
             id = 1,
             title = "Question 1",
             text = "Find the Batur image and keep it in view!",
-            answerImageName = "batur",                     // assets/augmented_images/batur.jpg
-            answerImageAssetPath = "augmented_images/batur.jpg",
-            modelFilePath = "3d_models/3d_camera_01.glb"
+            answerImageName = "batur2",                     // assets/augmented_images/batur2.jpg
+            answerImageAssetPath = "augmented_images/batur2.jpg",
+            modelFilePath = "3d_models/3d_camera_01.glb",
+            modelScale = 0.12f,
+            modelRotationY = 180f        // kameraya tam bakmıyorsa bunu değiştirirsin
         ),
         Question(
             id = 2,
@@ -31,7 +37,9 @@ object GameState {
             text = "Find İpek and unlock the glasses!",
             answerImageName = "ipek",                      // assets/augmented_images/ipek.jpg
             answerImageAssetPath = "augmented_images/ipek.jpg",
-            modelFilePath = "3d_models/glasses3d.glb"
+            modelFilePath = "3d_models/glasses3d.glb",
+            modelScale = 0.08f,
+            modelRotationY = 90f
         )
     )
 
