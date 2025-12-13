@@ -63,6 +63,9 @@ dependencies {
     implementation("io.github.sceneview:arsceneview:2.3.0")
     implementation("io.github.sceneview:sceneview:2.3.0")
 
+    //ML Kit Text Recognition (OCR)
+    implementation("com.google.mlkit:text-recognition:16.0.0")
+
     // Compose (MainActivity için)
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)

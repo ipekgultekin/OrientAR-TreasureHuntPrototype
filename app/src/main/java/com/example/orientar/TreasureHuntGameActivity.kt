@@ -3,23 +3,25 @@ package com.example.orientar
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Button
 import android.widget.Chronometer
+import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.ar.core.AugmentedImage
-import com.google.ar.core.AugmentedImageDatabase
+import androidx.lifecycle.lifecycleScope
 import com.google.ar.core.Config
-import com.google.ar.core.TrackingState
+import com.google.ar.core.Pose
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.node.AnchorNode
 import io.github.sceneview.loaders.ModelLoader
@@ -27,7 +29,7 @@ import io.github.sceneview.math.Rotation
 import io.github.sceneview.node.ModelNode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import android.widget.ImageButton
+import kotlinx.coroutines.launch
 
 class TreasureHuntGameActivity : AppCompatActivity() {
 
@@ -36,30 +38,31 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private lateinit var tvQuestionTitle: TextView
     private lateinit var tvQuestionText: TextView
     private lateinit var btnClose: ImageButton
-    private lateinit var btnNext: Button
+    private lateinit var btnNext: Button // XML'de bu butonun ID'sinin btnNext olduğundan emin ol
 
     private lateinit var modelLoader: ModelLoader
-
     private val CAMERA_REQ = 44
 
-    // ----- aktif soru / model bilgisi -----
-    private lateinit var currentQuestion: Question
-    private var targetName: String = ""     // aktif sorunun image adı
+    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var ocrRunning = false
+    private var lastOcrTime = 0L
+    private val ocrIntervalMs = 500L
 
-    // ----- run-time flags -----
+    private lateinit var currentQuestion: Question
+
     private var modelPlaced = false
     private var popupShown = false
     private var questionStartMs: Long = 0L
     private var currentAnchorNode: AnchorNode? = null
 
-    // popup geciktirme için
-    private val popupDelayMs = 8000L          // 8 saniye
+    // İSTEK: Popup süresi 3 saniye
+    private val popupDelayMs = 3000L
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingPopupRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_treasure_hunt_game)   // <-- kendi layout’un
+        setContentView(R.layout.activity_treasure_hunt_game)
 
         arSceneView     = findViewById(R.id.sceneView)
         chronoTimer     = findViewById(R.id.chronoTimer)
@@ -75,97 +78,85 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         )
 
         btnClose.setOnClickListener { finish() }
-        btnNext.setOnClickListener  { goToNextQuestion() }
+
+        // NEXT butonu mantığı (Cevap bulunamazsa atla)
+        btnNext.setOnClickListener { handleNextOrFinish() }
 
         ensureCameraPermission()
 
-        // İlk soruyu yükle (ilk çözülmemiş olan)
         val firstQ = GameState.nextUnsolved() ?: GameState.questions.first()
         loadQuestion(firstQ)
 
-        // 1) AR oturumu + Augmented Image DB
         arSceneView.onSessionCreated = { session ->
             arSceneView.planeRenderer.isVisible = true
-
             val cfg = Config(session).apply {
                 focusMode = Config.FocusMode.AUTO
                 lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
                 planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
                 instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
-                depthMode = Config.DepthMode.AUTOMATIC
             }
+            session.configure(cfg)
+            Toast.makeText(this, "AR Ready! Scan the text...", Toast.LENGTH_SHORT).show()
+        }
 
-            // Tüm sorulardaki görselleri DB'ye ekle
-            val imageDb = AugmentedImageDatabase(session).apply {
-                for (q in GameState.questions) {
-                    assets.open(q.answerImageAssetPath).use { ins ->
-                        val bmp = BitmapFactory.decodeStream(ins)
-                        addImage(q.answerImageName, bmp)
-                    }
-                }
-            }
-            cfg.augmentedImageDatabase = imageDb
+        arSceneView.onSessionUpdated = update@{ session, frame ->
+            if (modelPlaced) return@update
+
+            val now = SystemClock.elapsedRealtime()
+            if (ocrRunning || now - lastOcrTime < ocrIntervalMs) return@update
+            lastOcrTime = now
 
             try {
-                session.configure(cfg)
-            } catch (_: Exception) {
-                val fb = Config(session).apply {
-                    focusMode = Config.FocusMode.AUTO
-                    lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                    planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                    instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
-                    depthMode = Config.DepthMode.DISABLED
-                    augmentedImageDatabase = imageDb
-                }
-                session.configure(fb)
-            }
+                val image = frame.acquireCameraImage()
+                if (image == null) return@update
 
-            Toast.makeText(this, getString(R.string.ar_session_ready), Toast.LENGTH_SHORT).show()
-        }
+                ocrRunning = true
+                val inputImage = InputImage.fromMediaImage(image, 0)
 
-        // 2) Frame başına: sadece AKTİF sorunun görseline tepki ver
-        arSceneView.onSessionUpdated = { _, frame ->
-            if (!modelPlaced) {
-                val images = frame.getUpdatedTrackables(AugmentedImage::class.java)
-                for (img in images) {
-                    if (img.trackingState == TrackingState.TRACKING &&
-                        img.name == targetName
-                    ) {
-                        // Sadece aktif sorunun image adı geldiyse
-                        placeModelOnImage(img, currentQuestion)
-                        modelPlaced = true
-                        scheduleCorrectPopup(currentQuestion.id)   // 8 sn sonra popup
-                        break
+                recognizer.process(inputImage)
+                    .addOnSuccessListener { visionText ->
+                        val detectedFullText = visionText.text.uppercase()
+                        val matched = currentQuestion.targetKeywords.any { kw ->
+                            detectedFullText.contains(kw.uppercase())
+                        }
+
+                        if (matched) {
+                            placeModelInFrontOfCamera(session, frame, currentQuestion)
+                            modelPlaced = true
+                            scheduleCorrectPopup(currentQuestion.id)
+                        }
                     }
-                }
+                    .addOnCompleteListener {
+                        image.close()
+                        ocrRunning = false
+                    }
+            } catch (e: Exception) {
+                ocrRunning = false
             }
-        }
-
-        // 3) Hata
-        arSceneView.onSessionFailed = { e ->
-            Toast.makeText(this, "AR error: ${e.message ?: "NULL"}", Toast.LENGTH_LONG).show()
         }
     }
 
-    // Aktif soruyu UI + state'e yükleyen fonksiyon
     private fun loadQuestion(q: Question) {
         currentQuestion = q
-        targetName = q.answerImageName
-
         tvQuestionTitle.text = q.title
         tvQuestionText.text  = q.text
 
-        // Kronometreyi sıfırla
+        // Buton Yazısını Ayarla (Son soruysa FINISH, değilse NEXT)
+        val currentIndex = GameState.questions.indexOfFirst { it.id == q.id }
+        if (currentIndex == GameState.questions.size - 1) {
+            btnNext.text = "FINISH"
+        } else {
+            btnNext.text = "NEXT"
+        }
+
         questionStartMs = SystemClock.elapsedRealtime()
         chronoTimer.base = questionStartMs
         chronoTimer.start()
 
-        // Eski popup timer'ı iptal et
         pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
         pendingPopupRunnable = null
         popupShown = false
 
-        // Eski modeli komple temizle
         currentAnchorNode?.let { old ->
             arSceneView.removeChildNode(old)
             old.destroy()
@@ -174,48 +165,61 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         modelPlaced = false
     }
 
-    private fun placeModelOnImage(image: AugmentedImage, question: Question) {
-        try {
-            val anchor = image.createAnchor(image.centerPose)
+    // Kullanıcı cevabı bulamayıp NEXT/FINISH'e basarsa
+    private fun handleNextOrFinish() {
+        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
 
-            val modelInstance = modelLoader.createModelInstance(question.modelFilePath)
-
-            val modelNode = ModelNode(
-                modelInstance = modelInstance,
-                scaleToUnits = question.modelScale
-            ).apply {
-                // Y ekseni etrafında döndür (kamera önüne düz baksın)
-                rotation = Rotation(0f, question.modelRotationY, 0f)
+        if (btnNext.text == "FINISH") {
+            // Son sorudaysa Scoreboard'a git
+            val intent = Intent(this, ScoreboardActivity::class.java)
+            startActivity(intent)
+            finish()
+        } else {
+            // Sonraki soruya geç (Sıradaki soru, çözülmüş olsa bile)
+            val nextQ = GameState.getNextQuestionInList(currentQuestion.id)
+            if (nextQ != null) {
+                loadQuestion(nextQ)
+            } else {
+                Toast.makeText(this, "No more questions.", Toast.LENGTH_SHORT).show()
             }
-
-            // Eski modeli sil
-            currentAnchorNode?.let { old ->
-                arSceneView.removeChildNode(old)
-                old.destroy()
-            }
-
-            val anchorNode = AnchorNode(
-                engine = arSceneView.engine,
-                anchor = anchor
-            )
-
-            anchorNode.addChildNode(modelNode)
-            arSceneView.addChildNode(anchorNode)
-
-            currentAnchorNode = anchorNode
-
-        } catch (e: Exception) {
-            Toast.makeText(this, "Model load error: ${e.message}", Toast.LENGTH_LONG).show()
-            e.printStackTrace()
         }
     }
 
-    // Popup'u hemen değil, belirli bir gecikmeyle göster
+    private fun placeModelInFrontOfCamera(session: com.google.ar.core.Session, frame: com.google.ar.core.Frame, q: Question) {
+        try {
+            val cameraPose = frame.camera.pose
+            val distanceMeters = 1.0f
+            val forward = floatArrayOf(0f, 0f, -distanceMeters)
+            val targetPose = cameraPose.compose(Pose.makeTranslation(forward))
+
+            val anchor = session.createAnchor(targetPose)
+            val anchorNode = AnchorNode(engine = arSceneView.engine, anchor = anchor)
+            arSceneView.addChildNode(anchorNode)
+            currentAnchorNode = anchorNode
+
+            lifecycleScope.launch {
+                try {
+                    val modelInstance = modelLoader.loadModelInstance(q.modelFilePath)
+                    if (modelInstance != null) {
+                        val modelNode = ModelNode(
+                            modelInstance = modelInstance,
+                            scaleToUnits = q.modelScale
+                        ).apply {
+                            // İSTEK: X Rotation eklendi (Dik durması için)
+                            rotation = Rotation(q.modelRotationX, q.modelRotationY, 0f)
+                        }
+                        anchorNode.addChildNode(modelNode)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        } catch (e: Exception) { }
+    }
+
     private fun scheduleCorrectPopup(questionId: Int) {
         if (popupShown) return
-
         pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
-
         val runnable = Runnable {
             if (!isFinishing) {
                 showCorrectDialog(questionId)
@@ -228,7 +232,6 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     private fun showCorrectDialog(questionId: Int) {
         if (popupShown) return
         popupShown = true
-
         chronoTimer.stop()
 
         val elapsedMs = SystemClock.elapsedRealtime() - questionStartMs
@@ -237,26 +240,23 @@ class TreasureHuntGameActivity : AppCompatActivity() {
         val allSolved = GameState.totalSolved == GameState.totalQuestions()
 
         val msg = if (allSolved) {
-            "You answered all questions!\n" +
-                    "Solved: ${GameState.totalSolved}/${GameState.totalQuestions()}\n" +
-                    "Total time: ${GameState.totalTimeMs / 1000.0} s"
+            "Congratulations! You found all objects."
         } else {
-            "Correct answer!\nGet ready for the next question ✨"
+            "Correct Answer!"
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Correct!")
+            .setTitle("Great Job!")
             .setMessage(msg)
             .setCancelable(false)
-            .setPositiveButton(
-                if (allSolved) "See Scoreboard" else "Next Question"
-            ) { d, _ ->
+            .setPositiveButton(if (allSolved) "Scoreboard" else "Next Question") { d, _ ->
                 d.dismiss()
                 if (allSolved) {
                     val intent = Intent(this, ScoreboardActivity::class.java)
                     startActivity(intent)
                     finish()
                 } else {
+                    // Doğru bildiği için bir sonraki çözülmemiş soruya git
                     val nextQ = GameState.nextUnsolved()
                     if (nextQ != null) {
                         loadQuestion(nextQ)
@@ -271,45 +271,8 @@ class TreasureHuntGameActivity : AppCompatActivity() {
     }
 
     private fun ensureCameraPermission() {
-        val granted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_REQ)
-        }
-    }
-
-    override fun onRequestPermissionsResult(req: Int, perms: Array<out String>, res: IntArray) {
-        super.onRequestPermissionsResult(req, perms, res)
-        if (req == CAMERA_REQ && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, getString(R.string.camera_permission_granted), Toast.LENGTH_SHORT).show()
-        } else if (req == CAMERA_REQ) {
-            Toast.makeText(this, getString(R.string.camera_permission_required), Toast.LENGTH_LONG).show()
-            finish()
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
-        chronoTimer.stop()
-        arSceneView.destroy()
-    }
-
-    private fun goToNextQuestion() {
-        // Eğer hala popup için bekleyen runnable varsa iptal et
-        pendingPopupRunnable?.let { mainHandler.removeCallbacks(it) }
-        pendingPopupRunnable = null
-        popupShown = false
-
-        // Şu anki sorunun index'ini bul
-        val currentIndex = GameState.questions.indexOfFirst { it.id == currentQuestion.id }
-
-        if (currentIndex != -1 && currentIndex < GameState.questions.size - 1) {
-            val nextQ = GameState.questions[currentIndex + 1]
-            loadQuestion(nextQ)   // model temizleme + chrono reset içeride
-        } else {
-            Toast.makeText(this, "This is the last question.", Toast.LENGTH_SHORT).show()
         }
     }
 }

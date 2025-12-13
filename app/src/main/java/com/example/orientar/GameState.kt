@@ -1,74 +1,80 @@
 package com.example.orientar
 
-// Basit soru modeli
 data class Question(
     val id: Int,
     val title: String,
     val text: String,
-    // Augmented Image ismi (DB'ye eklerken verdiğimiz ad – uzantısız)
     val answerImageName: String,
-    // assets içindeki görüntü yolu
     val answerImageAssetPath: String,
-    // assets içindeki .glb yolu (ör: "3d_models/Backpack.glb")
     val modelFilePath: String,
-    // 3D model ölçeği
     val modelScale: Float,
-    // Y ekseni etrafındaki döndürme (derece cinsinden)
-    val modelRotationY: Float
+    val modelRotationX: Float, // YENİ: X ekseni açısı (Dik durması için)
+    val modelRotationY: Float, // Y ekseni açısı (Yönü)
+    val targetKeywords: List<String>
 )
 
 object GameState {
 
-    // ───── Sorular ─────
     val questions: MutableList<Question> = mutableListOf(
         Question(
             id = 1,
             title = "Question 1",
             text = "Find the Batur image and keep it in view!",
-            answerImageName = "batur2",                     // assets/augmented_images/batur2.jpg
+            answerImageName = "batur2",
             answerImageAssetPath = "augmented_images/batur2.jpg",
             modelFilePath = "3d_models/3d_camera_01.glb",
-            modelScale = 0.12f,
-            modelRotationY = 180f        // kameraya tam bakmıyorsa bunu değiştirirsin
+            modelScale = 0.5f,
+            modelRotationX = -90f, // Model yere bakıyorsa bunu -90 veya 90 yap
+            modelRotationY = 180f,
+            targetKeywords = listOf("SMOKE", "FREE", "ZONE")
         ),
         Question(
             id = 2,
             title = "Question 2",
             text = "Find İpek and unlock the glasses!",
-            answerImageName = "ipek",                      // assets/augmented_images/ipek.jpg
+            answerImageName = "ipek",
             answerImageAssetPath = "augmented_images/ipek.jpg",
             modelFilePath = "3d_models/glasses3d.glb",
-            modelScale = 0.08f,
-            modelRotationY = 90f
+            modelScale = 0.5f,
+            modelRotationX = -90f, // Model yere bakıyorsa bunu -90 veya 90 yap
+            modelRotationY = 90f,
+            targetKeywords = listOf("BILISIM", "TEKNOLOJILERI", "INFORMATION", "ODTU")
         )
     )
 
-    // ───── Skor / süre durumu ─────
-    private val solvedIds = mutableSetOf<Int>()
-    private var _totalTimeMs: Long = 0L
+    val bestTimes = mutableMapOf<Int, Long>()
 
     val totalSolved: Int
-        get() = solvedIds.size
+        get() = bestTimes.size
 
     val totalTimeMs: Long
-        get() = _totalTimeMs
+        get() = bestTimes.values.sum()
 
     fun totalQuestions(): Int = questions.size
 
     fun markSolved(questionId: Int, elapsedMs: Long) {
-        // Aynı soru ikinci kez sayılmasın
-        if (solvedIds.add(questionId)) {
-            _totalTimeMs += elapsedMs
+        val currentBest = bestTimes[questionId]
+        if (currentBest == null || elapsedMs < currentBest) {
+            bestTimes[questionId] = elapsedMs
         }
     }
 
-    fun isSolved(id: Int): Boolean = solvedIds.contains(id)
+    fun isSolved(id: Int): Boolean = bestTimes.containsKey(id)
 
+    // Sıradaki çözülmemiş soruyu bul, yoksa null dön
     fun nextUnsolved(): Question? =
-        questions.firstOrNull { !solvedIds.contains(it.id) }
+        questions.firstOrNull { !bestTimes.containsKey(it.id) }
+
+    // ID'den sonraki soruyu bul (Sırayla gitmek için)
+    fun getNextQuestionInList(currentId: Int): Question? {
+        val index = questions.indexOfFirst { it.id == currentId }
+        if (index != -1 && index < questions.size - 1) {
+            return questions[index + 1]
+        }
+        return null
+    }
 
     fun reset() {
-        solvedIds.clear()
-        _totalTimeMs = 0L
+        bestTimes.clear()
     }
 }
